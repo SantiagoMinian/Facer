@@ -60,7 +60,7 @@ def main():
                     continue
 
                 # Guardo encoding
-                person_encodings.append(face_encoding)
+                person_encodings.append(face_encoding.tolist())
 
                 # Comparo encoding y calculo top 5 porcentajes
                 percentages = compare_encoding(known_encodings, face_encoding, name_encodings, names)
@@ -82,8 +82,11 @@ def main():
             for key, value in percentage_average.items():
                 percentage_average[key] /= len(person_percentages)
 
-            max_percentage_name = max(percentage_average, key=percentage_average.get)
-            max_percentage = percentage_average[max_percentage_name]
+            if not percentage_average:
+                max_percentage = -1
+            else:
+                max_percentage_name = max(percentage_average, key=percentage_average.get)
+                max_percentage = percentage_average[max_percentage_name]
 
             # Defino tolerancia
             # Segun tolerancia defino si conozco o no a esa persona
@@ -91,8 +94,9 @@ def main():
             tolerance = 0.7
 
             # Chequeo si conozco
-            if max_percentage <= tolerance:
+            if max_percentage < tolerance:
                 # Persona nueva
+                name = "V#{}".format(len(name_encodings) + 1)
                 for encoding in person_encodings:
                     # TODO: poner bien el nombre
                     # image_name = "face{}{:%Y-%m-%d%H:%M:%S}.jpg".format(name, datetime.datetime.now())
@@ -113,8 +117,10 @@ def main():
                     print("Unknown face, added {}".format(name))
                     connection.send(("Unknown face, added {}".format(name)).encode())
 
-                name = "V#{}".format(len(name_encodings) + 1)
-                person_encodings = [person_encoding.toList() for person_encoding in person_encodings]
+                # person_encodings = [person_encoding.toList() for person_encoding in person_encodings]
+                # save_person_encodings = []
+                # for person_encoding in person_encodings:
+                #     save_person_encodings.append(person_encoding)
 
                 people_collection.insert_one(
                     {
@@ -123,6 +129,7 @@ def main():
                         # TODO: save image path
                     }
                 )
+                name_encodings[name] = len(person_encodings)
             else:
                 # TODO: hablar con nico a ver si nos conviene agregar nuevs encodings si viene una persona conocida
                 # Conocida
@@ -143,8 +150,7 @@ def init():
     names = []
     name_encodings = {}
 
-    uri = "mongodb://superadmin:12345678@localhost:27017/admin?authMechanism=SCRAM-SHA-1"
-    client = MongoClient(uri)
+    client = MongoClient()
     db = client.facer
 
     people_collection = db.people
@@ -213,7 +219,7 @@ def locate_faces(frame):
 def check_locations(face_locations, connection):
     faces = len(face_locations)
     if faces == 1:
-        print("Encoded face")
+        print("Found 1 face")
         return True
     elif faces == 0:
         print("No faces detected")
