@@ -1,3 +1,4 @@
+import random
 import socket
 import time
 
@@ -9,12 +10,15 @@ import api as face_recognition
 
 MIN_WIDTH = 180
 MIN_HEIGHT = 180
+MIN_PHOTOS = 3
+
+# TODO: Adjust tolerance
+TOLERANCE = 0.7
 
 HOST = "127.0.0.1"
 PORT = 5000
 
 
-# TODO hacer flexible cantidad de fotos que se van a necesitar para ver bien a una persona
 def main():
     # name_encodings is a dictionary with name as key and amount of encodings as value
     (known_encodings, names, name_encodings, people_collection) = init()
@@ -35,6 +39,7 @@ def main():
 
             person_encodings = []
             person_percentages = []
+            person_photos = []
 
             t_end = time.time() + 3
             while time.time() < t_end:
@@ -50,91 +55,63 @@ def main():
                 # Locateo
                 face_locations = locate_faces(frame)
 
-                # Encodeo cara
-                check = check_locations(face_locations, connection)
+                # Chequea cantidad de caras que se encontraron
+                check = check_locations(face_locations)
 
+                # Encodeo cara
                 if check:
                     face_encoding = face_recognition.face_encodings(frame, face_locations)[0]
-                else:
-                    # TODO: sumar uno a contador de fotos que no sirvieron
-                    continue
 
-                # Guardo encoding
-                person_encodings.append(face_encoding.tolist())
+                    (top, right, bottom, left) = face_locations[0]
+                    x = left
+                    y = top
+                    w = right - left
+                    h = bottom - top
 
-                # Comparo encoding y calculo top 5 porcentajes
-                percentages = compare_encoding(known_encodings, face_encoding, name_encodings, names)
+                    person_photos.append(frame[y - 70: y + h + 50, x - 50: x + w + 50])
 
-                # Guardo porcentajes
-                person_percentages.append(percentages)
+                    # Guardo encoding
+                    person_encodings.append(face_encoding.tolist())
 
-            # Hago promedio de los porcentajes (suma de % de la misma persona / cant de % de la misma persona)
-            # Promedio mas alto gana
-            percentage_average = {}
-            for person_percentage in person_percentages:
-                for key, value in person_percentage.items():
+                    # Comparo encoding y calculo top 5 porcentajes
+                    percentages = compare_encoding(known_encodings, face_encoding, name_encodings, names)
 
-                    if key in percentage_average:
-                        percentage_average[key] += value
-                    else:
-                        percentage_average[key] = value
+                    # Guardo porcentajes
+                    person_percentages.append(percentages)
 
-            for key, value in percentage_average.items():
-                percentage_average[key] /= len(person_percentages)
+            if len(person_photos) > MIN_PHOTOS:
 
-            if not percentage_average:
-                max_percentage = -1
-            else:
-                max_percentage_name = max(percentage_average, key=percentage_average.get)
-                max_percentage = percentage_average[max_percentage_name]
+                # Hago promedio de los porcentajes, promedio mas alto gana
+                max_percentage, max_percentage_name = calculate_percentage_average(person_percentages)
 
-            # Defino tolerancia
-            # Segun tolerancia defino si conozco o no a esa persona
-            # TODO: Adjust tolerance
-            tolerance = 0.7
+                # Segun tolerancia defino si conozco o no a esa persona
+                if max_percentage < TOLERANCE:
+                    # Persona nueva
+                    name = "V#{}".format(len(name_encodings) + 1)
+                    for encoding in person_encodings:
+                        known_encodings.append(encoding)
+                        names.append(name)
 
-            # Chequeo si conozco
-            if max_percentage < tolerance:
-                # Persona nueva
-                name = "V#{}".format(len(name_encodings) + 1)
-                for encoding in person_encodings:
-                    # TODO: poner bien el nombre
-                    # image_name = "face{}{:%Y-%m-%d%H:%M:%S}.jpg".format(name, datetime.datetime.now())
-                    # TODO: conseguir foto de la cara(una aleatoria??? o se pueden guardar todas y despues ver a mano
-                    # TODO que onda, total el ganador va a ser a mano) y guardarla
-                    # (top, right, bottom, left) = face_location
-                    # x = left
-                    # y = top
-                    # w = right - left
-                    # h = bottom - top
-                    #
-                    # face_image = frame[y:y + h, x:x + w]
-                    # cv2.imwrite(image_name, face_image)
+                    image_path = "face{}.jpg".format(name)
+                    face_image = random.choice(person_photos)
 
-                    known_encodings.append(encoding)
-                    names.append(name)
-
+                    people_collection.insert_one(
+                        {
+                            "name": name,
+                            "encodings": person_encodings,
+                            "path": image_path
+                        }
+                    )
                     print("Unknown face, added {}".format(name))
                     connection.send(("Unknown face, added {}".format(name)).encode())
-
-                # person_encodings = [person_encoding.toList() for person_encoding in person_encodings]
-                # save_person_encodings = []
-                # for person_encoding in person_encodings:
-                #     save_person_encodings.append(person_encoding)
-
-                people_collection.insert_one(
-                    {
-                        "name": name,
-                        "encodings": person_encodings
-                        # TODO: save image path
-                    }
-                )
-                name_encodings[name] = len(person_encodings)
+                    name_encodings[name] = len(person_encodings)
+                else:
+                    # TODO: hablar con nico a ver si nos conviene agregar nuevs encodings si viene una persona conocida
+                    # Conocida
+                    print("Known face of {}".format(max_percentage_name))
+                    connection.send(("Known face of {}".format(max_percentage_name)).encode())
             else:
-                # TODO: hablar con nico a ver si nos conviene agregar nuevs encodings si viene una persona conocida
-                # Conocida
-                print("Known face of {}".format(max_percentage_name))
-                connection.send(("Known face of {}".format(max_percentage_name)).encode())
+                connection.send("Too many or no faces detected")
 
 
 def resize_frame(frame):
@@ -189,6 +166,10 @@ def init_camera():
 
 def take_photo(video_capture):
     ret, frame = video_capture.read()
+    ret, frame = video_capture.read()
+    ret, frame = video_capture.read()
+    ret, frame = video_capture.read()
+    ret, frame = video_capture.read()
     if not ret:
         print("Couldn't take photo")
         return None
@@ -216,18 +197,16 @@ def locate_faces(frame):
     return face_locations
 
 
-def check_locations(face_locations, connection):
+def check_locations(face_locations):
     faces = len(face_locations)
     if faces == 1:
         print("Found 1 face")
         return True
     elif faces == 0:
         print("No faces detected")
-        connection.send("No faces detected".encode())
         return False
     else:
         print("Too many faces detected")
-        connection.send("Too many faces detected".encode())
         return False
 
 
@@ -249,6 +228,27 @@ def compare_encoding(known_encodings, face_encoding, name_encodings, names):
     percentages = {key: percentages[key] for key in (sorted(percentages, key=percentages.get, reverse=True)[:5])}
 
     return percentages
+
+
+def calculate_percentage_average(person_percentages):
+    percentage_average = {}
+    for person_percentage in person_percentages:
+        for key, value in person_percentage.items():
+
+            if key in percentage_average:
+                percentage_average[key] += value
+            else:
+                percentage_average[key] = value
+    for key, value in percentage_average.items():
+        percentage_average[key] /= len(person_percentages)
+    if not percentage_average:
+        max_percentage = -1
+        max_percentage_name = ""
+    else:
+        max_percentage_name = max(percentage_average, key=percentage_average.get)
+        max_percentage = percentage_average[max_percentage_name]
+
+    return max_percentage, max_percentage_name
 
 
 main()
