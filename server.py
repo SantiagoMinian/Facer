@@ -1,19 +1,19 @@
-import random
-import socket
-import time
-
 import cv2
 import numpy
+import random
+import select
+import socket
+import time
 from pymongo import MongoClient
 
 import api as face_recognition
 
-MIN_WIDTH = 180
-MIN_HEIGHT = 180
+MIN_WIDTH = 150
+MIN_HEIGHT = 150
 MIN_PHOTOS = 3
 
 # TODO: Adjust tolerance
-TOLERANCE = 0.7
+TOLERANCE = 0.8
 
 HOST = "127.0.0.1"
 PORT = 5000
@@ -24,96 +24,113 @@ def main():
     (known_encodings, names, name_encodings, people_collection) = init()
     server_socket = init_server()
     video_capture = init_camera()
+    read_list = [server_socket]
 
     while True:
-        connection, address = server_socket.accept()
 
-        data = connection.recv(1024).decode()
-
-        if not data:
+        # Saco foto
+        frame = take_photo(video_capture, False)
+        if frame is None:
             continue
 
-        print("Got {}".format(data))
+        readable, writable, error = select.select(read_list, [], [], 0)
+        for s in readable:
+            if s is server_socket:
+                client_socket, address = server_socket.accept()
+                read_list.append(client_socket)
+                print("Connection from".format(address))
+            else:
+                data = s.recv(1024).decode()
 
-        if data == "Capture":
-
-            person_encodings = []
-            person_percentages = []
-            person_photos = []
-
-            t_end = time.time() + 3
-            while time.time() < t_end:
-
-                # Saco foto
-                frame = take_photo(video_capture)
-                if frame is None:
+                if not data:
                     continue
 
-                # Recorto frame para evitar agarrar otras personas
-                frame = resize_frame(frame)
+                print("Got {}".format(data))
 
-                # Locateo
-                face_locations = locate_faces(frame)
+                if data == "Capture":
 
-                # Chequea cantidad de caras que se encontraron
-                check = check_locations(face_locations)
+                    person_encodings = []
+                    person_percentages = []
+                    person_photos = []
 
-                # Encodeo cara
-                if check:
-                    face_encoding = face_recognition.face_encodings(frame, face_locations)[0]
+                    t_end = time.time() + 3
+                    while time.time() < t_end:
 
-                    (top, right, bottom, left) = face_locations[0]
-                    x = left
-                    y = top
-                    w = right - left
-                    h = bottom - top
+                        # Saco foto
+                        frame = take_photo(video_capture, True)
+                        if frame is None:
+                            continue
 
-                    person_photos.append(frame[y - 70: y + h + 50, x - 50: x + w + 50])
+                        # Recorto frame para evitar agarrar otras personas
+                        frame = resize_frame(frame)
 
-                    # Guardo encoding
-                    person_encodings.append(face_encoding.tolist())
+                        # Locateo
+                        face_locations = locate_faces(frame)
 
-                    # Comparo encoding y calculo top 5 porcentajes
-                    percentages = compare_encoding(known_encodings, face_encoding, name_encodings, names)
+                        # Chequea cantidad de caras que se encontraron
+                        check = check_locations(face_locations)
 
-                    # Guardo porcentajes
-                    person_percentages.append(percentages)
+                        # Encodeo cara
+                        if check:
+                            face_encoding = face_recognition.face_encodings(frame, face_locations)[0]
 
-            if len(person_photos) > MIN_PHOTOS:
+                            (top, right, bottom, left) = face_locations[0]
+                            x = left
+                            y = top
+                            w = right - left
+                            h = bottom - top
 
-                # Hago promedio de los porcentajes, promedio mas alto gana
-                max_percentage, max_percentage_name = calculate_percentage_average(person_percentages)
+                            person_photos.append(frame[y - 70: y + h + 50, x - 50: x + w + 50])
 
-                # Segun tolerancia defino si conozco o no a esa persona
-                if max_percentage < TOLERANCE:
-                    # Persona nueva
-                    name = "V#{}".format(len(name_encodings) + 1)
-                    for encoding in person_encodings:
-                        known_encodings.append(encoding)
-                        names.append(name)
+                            # Guardo encoding
+                            person_encodings.append(face_encoding.tolist())
 
-                    image_path = "face{}.jpg".format(name)
-                    face_image = random.choice(person_photos)
+                            # Comparo encoding y calculo top 5 porcentajes
+                            percentages = compare_encoding(known_encodings, face_encoding, name_encodings, names)
 
-                    cv2.imwrite(image_path, face_image)
+                            # Guardo porcentajes
+                            person_percentages.append(percentages)
 
-                    people_collection.insert_one(
-                        {
-                            "name": name,
-                            "encodings": person_encodings,
-                            "path": image_path
-                        }
-                    )
-                    print("Unknown face, added {}".format(name))
-                    connection.send(("Unknown face, added {}".format(name)).encode())
-                    name_encodings[name] = len(person_encodings)
-                else:
-                    # TODO: hablar con nico a ver si nos conviene agregar nuevs encodings si viene una persona conocida
-                    # Conocida
-                    print("Known face of {}".format(max_percentage_name))
-                    connection.send(("Known face of {}".format(max_percentage_name)).encode())
-            else:
-                connection.send("Too many or no faces detected".encode())
+                    if len(person_photos) > MIN_PHOTOS:
+
+                        # Hago promedio de los porcentajes, promedio mas alto gana
+                        max_percentage, max_percentage_name = calculate_percentage_average(person_percentages)
+
+                        # Segun tolerancia defino si conozco o no a esa persona
+                        if max_percentage < TOLERANCE:
+                            # Persona nueva
+                            name = "V#{}".format(len(name_encodings) + 1)
+                            for encoding in person_encodings:
+                                known_encodings.append(encoding)
+                                names.append(name)
+
+                            image_path = "face{}.jpg".format(name)
+                            face_image = random.choice(person_photos)
+
+                            cv2.imwrite(image_path, face_image)
+
+                            people_collection.insert_one(
+                                {
+                                    "name": name,
+                                    "encodings": person_encodings,
+                                    "path": image_path
+                                }
+                            )
+                            print("Unknown face, added {}".format(name))
+                            s.send(("Unknown face, added {}".format(name)).encode())
+                            name_encodings[name] = len(person_encodings)
+                        else:
+                            # TODO: hablar con nico a ver si nos conviene agregar nuevs encodings si viene una persona conocida
+                            # Conocida
+                            print("Known face of {}".format(max_percentage_name))
+                            s.send(("Known face of {}".format(max_percentage_name)).encode())
+                    else:
+                        s.send("Too many or no faces detected".encode())
+                elif data == "End":
+                    # TODO: make mirror return End after getting response
+                    None
+                    # s.close()
+                    # read_list.remove(s)
 
 
 def resize_frame(frame):
@@ -159,23 +176,20 @@ def init_server():
 
 
 def init_camera():
-    video_capture = cv2.VideoCapture(0)
+    video_capture = cv2.VideoCapture(1)
     video_capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1440)
     video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 810)
     print("Opened video capture")
     return video_capture
 
 
-def take_photo(video_capture):
-    ret, frame = video_capture.read()
-    ret, frame = video_capture.read()
-    ret, frame = video_capture.read()
-    ret, frame = video_capture.read()
+def take_photo(video_capture, show):
     ret, frame = video_capture.read()
     if not ret:
         print("Couldn't take photo")
         return None
-    print("Took photo")
+    if show:
+        print("Took photo")
     return frame
 
 
