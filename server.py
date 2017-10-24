@@ -95,6 +95,8 @@ def main():
                     image_path = "face{}.jpg".format(name)
                     face_image = random.choice(person_photos)
 
+                    cv2.imwrite(image_path, face_image)
+
                     people_collection.insert_one(
                         {
                             "name": name,
@@ -111,7 +113,7 @@ def main():
                     print("Known face of {}".format(max_percentage_name))
                     connection.send(("Known face of {}".format(max_percentage_name)).encode())
             else:
-                connection.send("Too many or no faces detected")
+                connection.send("Too many or no faces detected".encode())
 
 
 def resize_frame(frame):
