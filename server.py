@@ -12,7 +12,6 @@ MIN_WIDTH = 150
 MIN_HEIGHT = 150
 MIN_PHOTOS = 3
 
-# TODO: Adjust tolerance
 TOLERANCE = 0.8
 
 HOST = "127.0.0.1"
@@ -120,17 +119,14 @@ def main():
                             s.send(("Unknown face, added {}".format(name)).encode())
                             name_encodings[name] = len(person_encodings)
                         else:
-                            # TODO: hablar con nico a ver si nos conviene agregar nuevs encodings si viene una persona conocida
                             # Conocida
                             print("Known face of {}".format(max_percentage_name))
                             s.send(("Known face of {}".format(max_percentage_name)).encode())
                     else:
                         s.send("Too many or no faces detected".encode())
                 elif data == "End":
-                    # TODO: make mirror return End after getting response
-                    None
-                    # s.close()
-                    # read_list.remove(s)
+                    s.close()
+                    read_list.remove(s)
 
 
 def resize_frame(frame):
