@@ -4,6 +4,7 @@ import random
 import select
 import socket
 import time
+import os
 from pymongo import MongoClient
 
 import api as face_recognition
@@ -98,7 +99,7 @@ def main():
                         # Segun tolerancia defino si conozco o no a esa persona
                         if max_percentage < TOLERANCE:
                             # Persona nueva
-                            name = "V#{}".format(len(name_encodings) + 1)
+                            name = "Visitante {}".format(len(name_encodings) + 1)
                             for encoding in person_encodings:
                                 known_encodings.append(encoding)
                                 names.append(name)
@@ -107,6 +108,7 @@ def main():
                             face_image = random.choice(person_photos)
 
                             cv2.imwrite(image_path, face_image)
+                            cv2.imwrite(os.path.join("/home/santiago/Desktop/Frente/public/images", image_path), face_image)
 
                             people_collection.insert_one(
                                 {
