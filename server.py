@@ -9,8 +9,8 @@ from pymongo import MongoClient
 
 import api as face_recognition
 
-MIN_WIDTH = 150
-MIN_HEIGHT = 150
+MIN_WIDTH = 129
+MIN_HEIGHT = 129
 MIN_PHOTOS = 3
 
 TOLERANCE = 0.8
@@ -108,7 +108,7 @@ def main():
                             face_image = random.choice(person_photos)
 
                             cv2.imwrite(image_path, face_image)
-                            cv2.imwrite(os.path.join("/home/santiago/Desktop/Frente/public/images", image_path), face_image)
+                            cv2.imwrite(os.path.join("/home/alumno/Escritorio/Frente/public/images", image_path), face_image)
 
                             people_collection.insert_one(
                                 {
@@ -174,7 +174,7 @@ def init_server():
 
 
 def init_camera():
-    video_capture = cv2.VideoCapture(1)
+    video_capture = cv2.VideoCapture(0)
     video_capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1440)
     video_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 810)
     print("Opened video capture")
